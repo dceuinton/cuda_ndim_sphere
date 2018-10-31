@@ -121,7 +121,12 @@ int main(int argc, char** argv) {
 
 	runSequentialTestCases(dimensions, radii);
 
-	int testCase = 0;
+	int testCase = 1;
+
+	if (argc == 2) {
+		testCase = atoi(argv[1]);
+		print("TestCase is %d", testCase);
+	}
 
 	const long halfBase = static_cast<long>(floor(radii[testCase]));
 	const long base = 2 * halfBase + 1;
@@ -154,11 +159,15 @@ int main(int argc, char** argv) {
 
 	cudaFree(gpuOutsideRecord);
 
-	int count = 0;
+	long count = 0;
 	for (int i = 0; i < nPointsToTest; ++i) {
 		if (outsideRecord[i] == 0) {
 			count++;
 		}
+	}
+
+	for (int i = 0; i < nPointsToTest; i++) {
+		print("%d :: %d", i, outsideRecord[i]);
 	}
 
 	free(outsideRecord);
