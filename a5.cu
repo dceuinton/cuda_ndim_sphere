@@ -83,6 +83,16 @@ __device__ void convert(long point, long base, long* index, long nDimensions) {
 	}
 }
 
+// __device__ int outside(long value, long halfBase, double radiusSquared) {
+// 	long difference = value - halfBase;
+
+// 	if (difference * difference < radiusSquared) {
+// 		return 0;
+// 	} else {
+// 		return 1;	
+// 	}		
+// }
+
 __device__ long getDimensionalValue(long point, long base, long dimension) {
 	long result = 0;
 	for (int i = 0; i < dimension; i++) {
@@ -92,24 +102,28 @@ __device__ long getDimensionalValue(long point, long base, long dimension) {
 	return result; 
 } 
 
-__device__ int outside(long value, long halfBase, double radiusSquared) {
-	long difference = value - halfBase;
-	
-	if (difference * difference < radiusSquared) {
-		return 0;
-	} else {
-		return 1;	
-	}	
+__device__ void determineOutside(long id, long dimension, 
+								 unsigned long long* pointsLength, double radiusSquared, 
+								 int* outsideRecord) {
+	if (dimension == 1) {
+		if (pointsLength[id] < radiusSquared) {
+			outsideRecord[id] = 0;
+		} else {
+			outsideRecord[id] = 1;
+		}
+	}
 }
 
-__device__ void addComponentToLength(long id, long value, long halfBase, long* pointsLength) {
+__device__ void addComponentToLength(long id, long value, long halfBase, unsigned long long* pointsLength) {
 	long difference = value - halfBase;
-	atomicAdd(&pointsLength[id], difference);
+	long difSq = difference * difference;
+	unsigned long long differenceSquared = (unsigned long long)difSq;
+	atomicAdd(&pointsLength[id], differenceSquared);
 }
 
 __global__ void gpuCountPoints(long nPointsToTest, double radiusSquared, 
 							   long halfBase, long base, 
-							   long* pointsLength, int* outsideRecord) {
+							   unsigned long long* pointsLength, int* outsideRecord) {
 
 	long id = blockIdx.x * blockDim.x + threadIdx.x;
 	long dimension = threadIdx.y + 1;
@@ -117,8 +131,8 @@ __global__ void gpuCountPoints(long nPointsToTest, double radiusSquared,
 	if (id < nPointsToTest) {
 		long dimensionalValue = getDimensionalValue(id, base, dimension);
 		addComponentToLength(id, dimensionalValue, halfBase, pointsLength);
-		
-		atomicAdd(&outsideRecord[id], isOutside);
+		determineOutside(id, dimension, pointsLength, radiusSquared, outsideRecord);
+		// atomicAdd(&outsideRecord[id], isOutside);
 
 		// int value = changeValue(dimension);
 		// atomicAdd(&outsideRecord[id], dimensionalValue);
@@ -148,9 +162,9 @@ int main(int argc, char** argv) {
 		testCase, nPointsToTest, dimensions[testCase], radii[testCase], base);
 
 	int nBytesOutsideRecord = sizeof(int) * nPointsToTest;
-	int nBytesPointLength = sizeof(long) * nPointsToTest;
+	int nBytesPointLength = sizeof(unsigned long long) * nPointsToTest;
 
-	long* pointsLength = (long *)malloc(nBytesPointLength);
+	unsigned long long* pointsLength = (unsigned long long *)malloc(nBytesPointLength);
 	int* outsideRecord = (int *)malloc(nBytesOutsideRecord);
 	for (int i = 0; i < nPointsToTest; ++i) {
 		outsideRecord[i] = 0;
@@ -158,7 +172,7 @@ int main(int argc, char** argv) {
 	}
 
 	int* gpuOutsideRecord;
-	long* gpuPointsLength;
+	unsigned long long* gpuPointsLength;
 
 	cudaMalloc(&gpuOutsideRecord, nBytesOutsideRecord);
 	cudaMalloc(&gpuPointsLength, nBytesPointLength);
@@ -166,7 +180,8 @@ int main(int argc, char** argv) {
 	cudaMemcpy(gpuOutsideRecord, outsideRecord, nBytesOutsideRecord, cudaMemcpyHostToDevice);
 	cudaMemcpy(gpuPointsLength, pointsLength, nBytesPointLength, cudaMemcpyHostToDevice);
 
-	int nThreads = 32 * dimensions[testCase];
+	int xThreads = 1024/dimensions[testCase];
+	int nThreads = xThreads * dimensions[testCase];
 	int nBlocks = (nPointsToTest + nThreads - 1) / nThreads;
 
 	dim3 blockDimensions(nThreads, dimensions[testCase], 1);
