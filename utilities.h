@@ -6,6 +6,7 @@
 
 #include <cstdarg>
 #include <stdio.h>
+#include <iostream>
 
 void debug(const char* format, ...) {
     #ifdef DEBUG

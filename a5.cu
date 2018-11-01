@@ -5,6 +5,15 @@ using namespace std;
 
 typedef unsigned long long ULL;
 
+template <typename T>
+void printArray(T* ar, int size) {
+	cout << "Printing array:" << endl;
+	for (int i = 0; i < size; i++) {
+		cout << i << " :: " << ar[i] << endl;
+	}
+	cout << endl;
+}
+
 void printTestResults(long nDimensions, double radius, long totalPoints) {
 	print("\nResults:");
 	print("nDimensions: %ld", nDimensions);
@@ -95,8 +104,8 @@ __device__ void convert(long point, long base, long* index, long nDimensions) {
 // 	}		
 // }
 
-__device__ long getDimensionalValue(long point, long base, long dimension) {
-	long result = 0;
+__device__ ULL getDimensionalValue(ULL point, ULL base, ULL dimension) {
+	ULL result = 0;
 	for (int i = 0; i < dimension; i++) {
 		result = point % base;
 		point = point / base;
@@ -116,11 +125,13 @@ __device__ void determineOutside(ULL id, ULL dimension,
 	}
 }
 
-__device__ void addComponentToLength(ULL id, ULL value, ULL halfBase, ULL* pointsLength) {
-	long long difference = value - halfBase;
-	unsigned long long differenceSquared = (difference * difference);
-	atomicAdd(&pointsLength[id], differenceSquared);
-}
+// __device__ void addComponentToLength(ULL id, ULL value, ULL halfBase, ULL* pointsLength) {
+// 	long long difference = value - halfBase;
+// 	// ULL differenceSquared = (difference * difference);
+// 	// atomicAdd(&pointsLength[id], differenceSquared);
+// 	ULL differenceSquared = (difference * difference);
+// 	atomicAdd(&pointsLength[id], difference);
+// }
 
 __global__ void gpuCountPoints(ULL nPointsToTest, double radiusSquared, 
 							   ULL halfBase, ULL base, 
@@ -131,12 +142,19 @@ __global__ void gpuCountPoints(ULL nPointsToTest, double radiusSquared,
 
 	if (id < nPointsToTest) {
 		long dimensionalValue = getDimensionalValue(id, base, dimension);
-		addComponentToLength(id, dimensionalValue, halfBase, pointsLength);
-		determineOutside(id, dimension, pointsLength, radiusSquared, outsideRecord);
-		// atomicAdd(&outsideRecord[id], isOutside);
+		// addComponentToLength(id, dimensionalValue, halfBase, pointsLength);
 
-		// int value = changeValue(dimension);
+		// long long difference = dimensionalValue - halfBase;
+		// ULL differenceSquared = difference * difference;
+		// atomicAdd(&pointsLength[id], dimensionalValue);
 		// atomicAdd(&outsideRecord[id], dimensionalValue);
+
+		outsideRecord[id] = 5;
+
+		// atomicAdd(&pointsLength[id], dimension + id);
+
+
+		// determineOutside(id, dimension, pointsLength, radiusSquared, outsideRecord);
 	}
 }
 
@@ -193,8 +211,10 @@ int main(int argc, char** argv) {
 	gpuCountPoints<<<gridDimensions, blockDimensions>>>(nPointsToTest, radiusSquared, halfBase, base, gpuPointsLength, gpuOutsideRecord);
 
 	cudaMemcpy(outsideRecord, gpuOutsideRecord, nBytesOutsideRecord, cudaMemcpyDeviceToHost);
+	cudaMemcpy(pointsLength, gpuPointsLength, nBytesPointLength, cudaMemcpyDeviceToHost);
 
 	cudaFree(gpuOutsideRecord);
+	cudaFree(gpuPointsLength);
 
 	long count = 0;
 	for (int i = 0; i < nPointsToTest; ++i) {
@@ -203,11 +223,18 @@ int main(int argc, char** argv) {
 		}
 	}
 
+	printArray(pointsLength, nPointsToTest);
+
+	print("");
+	print("Ok, now for outside record");
+	// printArray(outsideRecord, nPointsToTest);
+
 	for (int i = 0; i < nPointsToTest; i++) {
-		print("%d :: %d", i, outsideRecord[i]);
+		print("%d :: %lld", i, outsideRecord[i]);
 	}
 
 	free(outsideRecord);
+	free(pointsLength);
 
 	print("Parallel test %d:", testCase);
 	printTestResults(dimensions[testCase], radii[testCase], count);
