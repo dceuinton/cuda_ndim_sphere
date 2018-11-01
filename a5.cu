@@ -3,6 +3,8 @@
 
 using namespace std;
 
+typedef unsigned long long ULL;
+
 void printTestResults(long nDimensions, double radius, long totalPoints) {
 	print("\nResults:");
 	print("nDimensions: %ld", nDimensions);
@@ -102,8 +104,8 @@ __device__ long getDimensionalValue(long point, long base, long dimension) {
 	return result; 
 } 
 
-__device__ void determineOutside(long id, long dimension, 
-								 unsigned long long* pointsLength, double radiusSquared, 
+__device__ void determineOutside(ULL id, ULL dimension, 
+								 ULL* pointsLength, double radiusSquared, 
 								 int* outsideRecord) {
 	if (dimension == 1) {
 		if (pointsLength[id] < radiusSquared) {
@@ -114,19 +116,18 @@ __device__ void determineOutside(long id, long dimension,
 	}
 }
 
-__device__ void addComponentToLength(long id, long value, long halfBase, unsigned long long* pointsLength) {
-	long difference = value - halfBase;
-	long difSq = difference * difference;
-	unsigned long long differenceSquared = (unsigned long long)difSq;
+__device__ void addComponentToLength(ULL id, ULL value, ULL halfBase, ULL* pointsLength) {
+	long long difference = value - halfBase;
+	unsigned long long differenceSquared = (difference * difference);
 	atomicAdd(&pointsLength[id], differenceSquared);
 }
 
-__global__ void gpuCountPoints(long nPointsToTest, double radiusSquared, 
-							   long halfBase, long base, 
-							   unsigned long long* pointsLength, int* outsideRecord) {
+__global__ void gpuCountPoints(ULL nPointsToTest, double radiusSquared, 
+							   ULL halfBase, ULL base, 
+							   ULL* pointsLength, int* outsideRecord) {
 
-	long id = blockIdx.x * blockDim.x + threadIdx.x;
-	long dimension = threadIdx.y + 1;
+	ULL id = blockIdx.x * blockDim.x + threadIdx.x;
+	ULL dimension = threadIdx.y + 1;
 
 	if (id < nPointsToTest) {
 		long dimensionalValue = getDimensionalValue(id, base, dimension);
@@ -153,26 +154,26 @@ int main(int argc, char** argv) {
 		print("TestCase is %d", testCase);
 	}
 
-	const long halfBase = static_cast<long>(floor(radii[testCase]));
-	const long base = 2 * halfBase + 1;
-	const long nPointsToTest = powerLong(base, dimensions[testCase]);
+	const ULL halfBase = static_cast<ULL>(floor(radii[testCase]));
+	const ULL base = 2 * halfBase + 1;
+	const ULL nPointsToTest = powerLong(base, dimensions[testCase]);
 	const double radiusSquared = radii[testCase] * radii[testCase];
 
-	debug("gpu settings tc:%d: nPointsToTest: %ld, nDimensions: %ld, radius: %f, base: %ld", 
+	debug("gpu settings tc:%d: nPointsToTest: %ld, nDimensions: %ld, radius: %.2f, base: %ld", 
 		testCase, nPointsToTest, dimensions[testCase], radii[testCase], base);
 
 	int nBytesOutsideRecord = sizeof(int) * nPointsToTest;
-	int nBytesPointLength = sizeof(unsigned long long) * nPointsToTest;
+	int nBytesPointLength = sizeof(ULL) * nPointsToTest;
 
-	unsigned long long* pointsLength = (unsigned long long *)malloc(nBytesPointLength);
 	int* outsideRecord = (int *)malloc(nBytesOutsideRecord);
+	ULL* pointsLength = (ULL *)malloc(nBytesPointLength);
 	for (int i = 0; i < nPointsToTest; ++i) {
 		outsideRecord[i] = 0;
 		pointsLength[i] = 0;
 	}
 
 	int* gpuOutsideRecord;
-	unsigned long long* gpuPointsLength;
+	ULL* gpuPointsLength;
 
 	cudaMalloc(&gpuOutsideRecord, nBytesOutsideRecord);
 	cudaMalloc(&gpuPointsLength, nBytesPointLength);
@@ -183,6 +184,8 @@ int main(int argc, char** argv) {
 	int xThreads = 1024/dimensions[testCase];
 	int nThreads = xThreads * dimensions[testCase];
 	int nBlocks = (nPointsToTest + nThreads - 1) / nThreads;
+
+	debug("Threads X: %d, threads Y: %d, totalPerBlock %d", xThreads, dimensions[testCase], nThreads);
 
 	dim3 blockDimensions(nThreads, dimensions[testCase], 1);
 	dim3 gridDimensions(nBlocks, 1, 1);
