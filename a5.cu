@@ -102,15 +102,26 @@ __device__ int outside(long value, long halfBase, double radiusSquared) {
 	}	
 }
 
-__global__ void gpuCountPoints(long nPointsToTest, double radiusSquared, long halfBase, long base, int* outsideRecord) {
+__device__ void addComponentToLength(long id, long value, long halfBase, long* pointsLength) {
+	long difference = value - halfBase;
+	atomicAdd(&pointsLength[id], difference);
+}
+
+__global__ void gpuCountPoints(long nPointsToTest, double radiusSquared, 
+							   long halfBase, long base, 
+							   long* pointsLength, int* outsideRecord) {
 
 	long id = blockIdx.x * blockDim.x + threadIdx.x;
-	long dimension = blockDim.y;
+	long dimension = threadIdx.y + 1;
 
 	if (id < nPointsToTest) {
 		long dimensionalValue = getDimensionalValue(id, base, dimension);
-		int isOutside = outside(dimensionalValue, halfBase, radiusSquared);
+		addComponentToLength(id, dimensionalValue, halfBase, pointsLength);
+		
 		atomicAdd(&outsideRecord[id], isOutside);
+
+		// int value = changeValue(dimension);
+		// atomicAdd(&outsideRecord[id], dimensionalValue);
 	}
 }
 
@@ -136,16 +147,24 @@ int main(int argc, char** argv) {
 	debug("gpu settings tc:%d: nPointsToTest: %ld, nDimensions: %ld, radius: %f, base: %ld", 
 		testCase, nPointsToTest, dimensions[testCase], radii[testCase], base);
 
-	int nBytes = sizeof(int) * nPointsToTest;
+	int nBytesOutsideRecord = sizeof(int) * nPointsToTest;
+	int nBytesPointLength = sizeof(long) * nPointsToTest;
 
-	int* outsideRecord = (int *)malloc(nBytes);
+	long* pointsLength = (long *)malloc(nBytesPointLength);
+	int* outsideRecord = (int *)malloc(nBytesOutsideRecord);
 	for (int i = 0; i < nPointsToTest; ++i) {
 		outsideRecord[i] = 0;
+		pointsLength[i] = 0;
 	}
 
 	int* gpuOutsideRecord;
-	cudaMalloc(&gpuOutsideRecord, nBytes);
-	cudaMemcpy(gpuOutsideRecord, outsideRecord, nBytes, cudaMemcpyHostToDevice);
+	long* gpuPointsLength;
+
+	cudaMalloc(&gpuOutsideRecord, nBytesOutsideRecord);
+	cudaMalloc(&gpuPointsLength, nBytesPointLength);
+
+	cudaMemcpy(gpuOutsideRecord, outsideRecord, nBytesOutsideRecord, cudaMemcpyHostToDevice);
+	cudaMemcpy(gpuPointsLength, pointsLength, nBytesPointLength, cudaMemcpyHostToDevice);
 
 	int nThreads = 32 * dimensions[testCase];
 	int nBlocks = (nPointsToTest + nThreads - 1) / nThreads;
@@ -153,9 +172,9 @@ int main(int argc, char** argv) {
 	dim3 blockDimensions(nThreads, dimensions[testCase], 1);
 	dim3 gridDimensions(nBlocks, 1, 1);
 
-	gpuCountPoints<<<gridDimensions, blockDimensions>>>(nPointsToTest, radiusSquared, halfBase, base, gpuOutsideRecord);
+	gpuCountPoints<<<gridDimensions, blockDimensions>>>(nPointsToTest, radiusSquared, halfBase, base, gpuPointsLength, gpuOutsideRecord);
 
-	cudaMemcpy(outsideRecord, gpuOutsideRecord, nBytes, cudaMemcpyDeviceToHost);
+	cudaMemcpy(outsideRecord, gpuOutsideRecord, nBytesOutsideRecord, cudaMemcpyDeviceToHost);
 
 	cudaFree(gpuOutsideRecord);
 
