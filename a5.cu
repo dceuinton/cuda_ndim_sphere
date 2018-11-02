@@ -127,7 +127,8 @@ __device__ void determineOutside(ULL id, ULL dimension,
 
 __global__ void gpuCountPoints(ULL nPointsToTest, double radiusSquared, 
 							   ULL halfBase, ULL base, 
-							   ULL nDimensions, int* record) {
+							   ULL nDimensions, int* record,
+							   int* count) {
 
 	ULL id = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -153,7 +154,7 @@ __global__ void gpuCountPoints(ULL nPointsToTest, double radiusSquared,
 			record[id] = 1;
 		}
 
-
+		atomicAdd(count, record[id]);
 
 		// record[id] = id;
 	}
@@ -162,7 +163,7 @@ __global__ void gpuCountPoints(ULL nPointsToTest, double radiusSquared,
 int main(int argc, char** argv) {
 
 	// Test variables that I have the answers to
-	int nTests = 3;
+	// int nTests = 3;
 	ULL dimensions[] = {1, 2, 3};
 	double radii[] = {25.5, 2.05, 1.5};
 
@@ -188,16 +189,21 @@ int main(int argc, char** argv) {
 
 	// get the size to transfer to the device and initialise the array that will be sent
 	int nBytesOutsideRecord = sizeof(int) * nPointsToTest;
+	int nBytesCount = sizeof(int);
 	int* record = (int *)malloc(nBytesOutsideRecord);
+	int count = 0;
 	for (int i = 0; i < nPointsToTest; ++i) {
 		record[i] = 0;
 	}
 
 	int* gpuRecord;
+	int* gpuCount;
 
 	cudaMalloc(&gpuRecord, nBytesOutsideRecord);
+	cudaMalloc(&gpuCount, nBytesCount);
 
 	cudaMemcpy(gpuRecord, record, nBytesOutsideRecord, cudaMemcpyHostToDevice);
+	cudaMemcpy(gpuCount, &count, nBytesCount, cudaMemcpyHostToDevice);
 
 	int nThreads = 256;
 	int nBlocks = (nPointsToTest + nThreads - 1) / nThreads;
@@ -205,20 +211,20 @@ int main(int argc, char** argv) {
 	dim3 blockDimensions(nThreads, 1, 1);
 	dim3 gridDimensions(nBlocks, 1, 1);
 
-	gpuCountPoints<<<gridDimensions, blockDimensions>>>(nPointsToTest, radiusSquared, halfBase, base, dimensions[testCase], gpuRecord);
+	gpuCountPoints<<<gridDimensions, blockDimensions>>>(nPointsToTest, radiusSquared, 
+														halfBase, base, 
+														dimensions[testCase], gpuRecord,
+														gpuCount);
 
 	cudaMemcpy(record, gpuRecord, nBytesOutsideRecord, cudaMemcpyDeviceToHost);
+	cudaMemcpy(&count, gpuCount, nBytesCount, cudaMemcpyDeviceToHost);
 
 	cudaFree(gpuRecord);
+	cudaFree(gpuCount);
 
-	long count = 0;
-	for (int i = 0; i < nPointsToTest; ++i) {
-		if (record[i] == 1) {
-			count++;
-		}
-	}
+	// print("Count: %d", count);
 
-	print("Ok, now for outside record, remember radius^2 is %f", radiusSquared);
+	// print("Ok, now for outside record, remember radius^2 is %f", radiusSquared);
 	printArray(record, nPointsToTest);
 
 	free(record);
