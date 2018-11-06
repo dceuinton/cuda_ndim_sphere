@@ -70,6 +70,9 @@ __global__ void gpuCountPoints(ULL nPointsToTest, double radiusSquared,
 	}
 }
 
+// Runs a gpu kernel to work out how many integer points are in an ndimensional sphere. 
+// Can manually set testCase to work through some of the test cases defined or 
+// run the program with the test case as an argument. There are 27 test cases. 
 int main(int argc, char** argv) {
 	// cuda event creation for timing the kernel
     cudaEvent_t start, stop;
@@ -122,21 +125,26 @@ int main(int argc, char** argv) {
 		record[i] = 0;
 	}
 
+	// pointers for gpu arrays
 	int* gpuRecord;
 	int* gpuCount;
 
+	// allocate memory on device (gpu)
 	cudaMalloc(&gpuRecord, nBytesOutsideRecord);
 	cudaMalloc(&gpuCount, nBytesCount);
 
+	// copy over data to device
 	cudaMemcpy(gpuRecord, record, nBytesOutsideRecord, cudaMemcpyHostToDevice);
 	cudaMemcpy(gpuCount, &count, nBytesCount, cudaMemcpyHostToDevice);
 
+	// determine threads and block size
 	int nThreads = 256;
 	int nBlocks = (nPointsToTest + nThreads - 1) / nThreads;
 
 	dim3 blockDimensions(nThreads, 1, 1);
 	dim3 gridDimensions(nBlocks, 1, 1);
 
+	// run the kernel with timing
 	cudaEventRecord(start);
 	gpuCountPoints<<<gridDimensions, blockDimensions>>>(nPointsToTest, radiusSquared, 
 														halfBase, base, 
@@ -152,9 +160,9 @@ int main(int argc, char** argv) {
     cudaEventDestroy(start);
     cudaEventDestroy(stop);
 
+    // free up memory
 	cudaFree(gpuRecord);
 	cudaFree(gpuCount);
-
 	free(record);
 
 	// printTestResults(dimensions[testCase], radii[testCase], count);
