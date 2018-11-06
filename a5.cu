@@ -23,6 +23,12 @@ void printTestResults(long nDimensions, double radius, long totalPoints) {
 	print("total points: %ld\n", totalPoints);
 }
 
+void printCSVTestResults(int tpb, int bpg, long nDimensions, double radius, long totalPoints, float time) {
+	print("\nCSV Results:");
+	print("TPB, BPG, dimensions, radius, total points in sphere, time for kernel to run");
+	print("%d,%d,%ld,%f,%ld,%.4f,\n",tpb, bpg, nDimensions, radius, totalPoints, time);
+}
+
 long powerLong(long base, long exponent) {
 	long result = 1;
 	for (int i = 0; i < exponent; ++i) {
@@ -147,7 +153,6 @@ __global__ void gpuCountPoints(ULL nPointsToTest, double radiusSquared,
 			long long difference = index[i] - halfBase;
 			ULL differenceSquared = (difference * difference);
 			distance += differenceSquared;
-			// record[i] = differenceSquared;
 		}
 
 		if (distance < radiusSquared) {
@@ -155,17 +160,34 @@ __global__ void gpuCountPoints(ULL nPointsToTest, double radiusSquared,
 		}
 
 		atomicAdd(count, record[id]);
-
-		// record[id] = id;
 	}
 }
 
 int main(int argc, char** argv) {
+	// cuda event creation for timing the kernel
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
 
-	// Test variables that I have the answers to
-	// int nTests = 3;
-	ULL dimensions[] = {1, 2, 3};
-	double radii[] = {25.5, 2.05, 1.5};
+    int nTests = 27;
+	ULL dimensions[] = {1, 2, 3, 
+						1, 1, 1, 
+						2, 2, 2,
+						3, 3, 3,
+						4, 4, 4,
+						5, 5, 5,
+						6, 6, 6,
+						7, 7, 7,
+						8, 8, 8};
+	double radii[] = {25.5, 2.05, 1.5, 
+					  2.05, 5.05, 10.05,
+					  2.05, 5.05, 10.05,
+					  2.05, 5.05, 10.05,
+					  2.05, 5.05, 10.05,
+					  2.05, 5.05, 10.05,
+					  2.05, 5.05, 10.05,
+					  2.05, 5.05, 10.05,
+					  2.05, 5.05, 10.05};
 
 	// Sequential answers
 	runSequentialTestCases(dimensions, radii);
@@ -211,6 +233,7 @@ int main(int argc, char** argv) {
 	dim3 blockDimensions(nThreads, 1, 1);
 	dim3 gridDimensions(nBlocks, 1, 1);
 
+	cudaEventRecord(start);
 	gpuCountPoints<<<gridDimensions, blockDimensions>>>(nPointsToTest, radiusSquared, 
 														halfBase, base, 
 														dimensions[testCase], gpuRecord,
@@ -218,19 +241,22 @@ int main(int argc, char** argv) {
 
 	cudaMemcpy(record, gpuRecord, nBytesOutsideRecord, cudaMemcpyDeviceToHost);
 	cudaMemcpy(&count, gpuCount, nBytesCount, cudaMemcpyDeviceToHost);
+	cudaEventRecord(stop);
+
+	cudaEventSynchronize(stop);
+	float time;
+    cudaEventElapsedTime(&time, start, stop);
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
 
 	cudaFree(gpuRecord);
 	cudaFree(gpuCount);
 
-	// print("Count: %d", count);
-
-	// print("Ok, now for outside record, remember radius^2 is %f", radiusSquared);
-	printArray(record, nPointsToTest);
-
 	free(record);
 
-	print("Parallel test %d:", testCase);
-	printTestResults(dimensions[testCase], radii[testCase], count);
+	print("Parallel test %d of 6:", testCase);
+	// printTestResults(dimensions[testCase], radii[testCase], count);
+	printCSVTestResults(nThreads, nBlocks, dimensions[testCase], radii[testCase], count, time);
 	
 	return 0;
 }
