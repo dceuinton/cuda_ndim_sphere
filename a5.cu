@@ -26,7 +26,7 @@ void printTestResults(long nDimensions, double radius, long totalPoints) {
 void printCSVTestResults(int tpb, int bpg, long nDimensions, double radius, long totalPoints, float time) {
 	print("\nCSV Results:");
 	print("TPB, BPG, dimensions, radius, total points in sphere, time for kernel to run");
-	print("%d,%d,%ld,%f,%ld,%.4f,\n",tpb, bpg, nDimensions, radius, totalPoints, time);
+	print("%d,%d,%ld,%.4f,%ld,%.4f,",tpb, bpg, nDimensions, radius, totalPoints, time);
 }
 
 long powerLong(long base, long exponent) {
@@ -123,14 +123,6 @@ __device__ void determineOutside(ULL id, ULL dimension,
 	}
 }
 
-// __device__ void addComponentToLength(ULL id, ULL value, ULL halfBase, ULL* pointsLength) {
-// 	long long difference = value - halfBase;
-// 	// ULL differenceSquared = (difference * difference);
-// 	// atomicAdd(&pointsLength[id], differenceSquared);
-// 	ULL differenceSquared = (difference * difference);
-// 	atomicAdd(&pointsLength[id], difference);
-// }
-
 __global__ void gpuCountPoints(ULL nPointsToTest, double radiusSquared, 
 							   ULL halfBase, ULL base, 
 							   ULL nDimensions, int* record,
@@ -169,7 +161,7 @@ int main(int argc, char** argv) {
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
 
-    int nTests = 27;
+    // int nTests = 27;
 	ULL dimensions[] = {1, 2, 3, 
 						1, 1, 1, 
 						2, 2, 2,
@@ -189,9 +181,6 @@ int main(int argc, char** argv) {
 					  2.05, 5.05, 10.05,
 					  2.05, 5.05, 10.05};
 
-	// Sequential answers
-	runSequentialTestCases(dimensions, radii);
-
 	// Use the 2 dimensional test case if none is selected
 	int testCase = 1;
 
@@ -201,13 +190,13 @@ int main(int argc, char** argv) {
 	}
 
 	// initialise important variables
-	const ULL halfBase = static_cast<ULL>(floor(radii[testCase]));
-	const ULL base = 2 * halfBase + 1;
-	const ULL nPointsToTest = powerLong(base, dimensions[testCase]);
-	const double radiusSquared = radii[testCase] * radii[testCase];
+	ULL halfBase = static_cast<ULL>(floor(radii[testCase]));
+	ULL base = 2 * halfBase + 1;
+	ULL nPointsToTest = powerLong(base, dimensions[testCase]);
+	double radiusSquared = radii[testCase] * radii[testCase];
 
 	debug("gpu settings tc:%d: nPointsToTest: %ld, nDimensions: %ld, radius: %.2f, base: %ld", 
-		testCase, nPointsToTest, dimensions[testCase], radii[testCase], base);
+	testCase, nPointsToTest, dimensions[testCase], radii[testCase], base);
 
 	// get the size to transfer to the device and initialise the array that will be sent
 	int nBytesOutsideRecord = sizeof(int) * nPointsToTest;
@@ -242,7 +231,6 @@ int main(int argc, char** argv) {
 	cudaMemcpy(record, gpuRecord, nBytesOutsideRecord, cudaMemcpyDeviceToHost);
 	cudaMemcpy(&count, gpuCount, nBytesCount, cudaMemcpyDeviceToHost);
 	cudaEventRecord(stop);
-
 	cudaEventSynchronize(stop);
 	float time;
     cudaEventElapsedTime(&time, start, stop);
@@ -254,9 +242,9 @@ int main(int argc, char** argv) {
 
 	free(record);
 
-	print("Parallel test %d of 6:", testCase);
 	// printTestResults(dimensions[testCase], radii[testCase], count);
 	printCSVTestResults(nThreads, nBlocks, dimensions[testCase], radii[testCase], count, time);
+	print("Kernel took %fms", time);
 	
 	return 0;
 }
