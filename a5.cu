@@ -37,92 +37,7 @@ long powerLong(long base, long exponent) {
 	return result;
 }
 
-void convert(long point, long base, vector<long>& index) {
-	const long nDimensions = index.size();
-	for (long i = 0; i < nDimensions; ++i) {
-		index[i] = 0;
-	}
-
-	long id = 0;
-	while (point != 0) {
-		long remainder = point % base;
-		point = point / base;
-		index[id] = remainder;
-		id++;
-	}
-}
-
-long countPoints(long nDimensions, double radius) {
-	const long halfBase = static_cast<long>(floor(radius));
-	const long base = 2 * halfBase + 1;
-	const double radiusSquared = radius * radius;
-	const long nPointsToTest = powerLong(base, nDimensions);
-
-	debug("countPoints():\nhalfBase: %ld\n, base: %ld\n, radiusSquared: %.2f\n, nPointsToTest: %ld", halfBase, base, radiusSquared, nPointsToTest);
-
-	long count = 0;
-	vector<long> index(nDimensions, 0);
-
-	for (long point = 0; point < nPointsToTest; ++point) {
-	    convert(point, base, index);
-	    double testRadiusSquared = 0;
-	    for (long dimension = 0; dimension < nDimensions; ++dimension) {
-	        double difference = index[dimension] - halfBase;
-	        testRadiusSquared += difference * difference;
-	    }
-	    if (testRadiusSquared < radiusSquared) {
-	    	++count;
-	    }
-	}
-
-	return count;
-}
-
-void runSequentialTestCases(ULL *dimensions, double* radii) {
-	print("Sequential Tests ---------------");
-	for (int i = 0; i < 3; i++) {
-		long totalPoints = countPoints(dimensions[i], radii[i]);
-		printTestResults(dimensions[i], radii[i], totalPoints);
-	}
-	print("Sequential Tests Over ----------\n");
-}
-
-__device__ void convert(long point, long base, long* index, long nDimensions) {
-	// Ensure array initialised
-	for (int i = 0; i < nDimensions; ++i) {
-		index[i] = 0;
-	}
-
-	long i = 0;
-	while (point != 0) {
-		long remainder = point % base;
-		point = point / base;
-		index[i] = remainder;
-		i++;
-	}
-}
-
-__device__ ULL getDimensionalValue(ULL point, ULL base, ULL dimension) {
-	ULL result = 0;
-	for (int i = 0; i < dimension; i++) {
-		result = point % base;
-		point = point / base;
-	}
-	return result; 
-} 
-
-__device__ void determineOutside(ULL id, ULL dimension, 
-								 ULL* pointsLength, double radiusSquared, 
-								 int* record) {
-	if (dimension == 1) {
-		if (pointsLength[id] < radiusSquared) {
-			record[id] = 0;
-		} else {
-			record[id] = 1;
-		}
-	}
-}
-
+// Kernel for calculating point in ndim sphere
 __global__ void gpuCountPoints(ULL nPointsToTest, double radiusSquared, 
 							   ULL halfBase, ULL base, 
 							   ULL nDimensions, int* record,
@@ -161,7 +76,7 @@ int main(int argc, char** argv) {
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
 
-    // int nTests = 27;
+    // Determine some test cases 
 	ULL dimensions[] = {1, 2, 3, 
 						1, 1, 1, 
 						2, 2, 2,
