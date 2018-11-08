@@ -23,10 +23,10 @@ void printTestResults(long nDimensions, double radius, long totalPoints) {
 	print("total points: %ld\n", totalPoints);
 }
 
-void printCSVTestResults(int tpb, int bpg, long nDimensions, double radius, long totalPoints, float time) {
-	print("\nCSV Results:");
-	print("TPB, BPG, dimensions, radius, total points in sphere, time for kernel to run");
-	print("%d,%d,%ld,%.4f,%ld,%.4f,",tpb, bpg, nDimensions, radius, totalPoints, time);
+void printCSVTestResults(int tpb, int bpg, int bpg1, int bpg2, long nDimensions, double radius, ULL totalPoints, float time) {
+	debug("\nCSV Results:");
+	debug("TPB, BPG (x, y, z), dimensions, radius, total points in sphere, time for kernel to run");
+	print("%d,(%d, %d, %d),%ld,%.4f,%ld,%.4f,",tpb, bpg, bpg1, bpg2, nDimensions, radius, totalPoints, time);
 }
 
 long powerLong(long base, long exponent) {
@@ -40,10 +40,11 @@ long powerLong(long base, long exponent) {
 // Kernel for calculating point in ndim sphere
 __global__ void gpuCountPoints(ULL nPointsToTest, double radiusSquared, 
 							   ULL halfBase, ULL base, 
-							   ULL nDimensions, int* record,
-							   int* count) {
+							   ULL nDimensions, char* record,
+							   ULL* count) {
 
-	ULL id = blockIdx.x * blockDim.x + threadIdx.x;
+	ULL blockId = blockIdx.y * gridDim.x + blockIdx.x;
+	ULL id = blockId * blockDim.x + threadIdx.x;
 
 	if (id < nPointsToTest) {
 		ULL index[MAX_DIMENSIONS];
@@ -104,7 +105,7 @@ int main(int argc, char** argv) {
 
 	if (argc == 2) {
 		testCase = atoi(argv[1]);
-		print("TestCase is %d", testCase);
+		debug("TestCase is %d", testCase);
 	}
 
 	// initialise important variables
@@ -117,17 +118,20 @@ int main(int argc, char** argv) {
 	testCase, nPointsToTest, dimensions[testCase], radii[testCase], base);
 
 	// get the size to transfer to the device and initialise the array that will be sent
-	int nBytesOutsideRecord = sizeof(int) * nPointsToTest;
-	int nBytesCount = sizeof(int);
-	int* record = (int *)malloc(nBytesOutsideRecord);
-	int count = 0;
+	ULL nBytesOutsideRecord = sizeof(char) * nPointsToTest;
+	ULL nBytesCount = sizeof(ULL);
+	debug("nBytesOutsideRecord: %ld, nBytesCount: %ld", nBytesOutsideRecord, nBytesCount);
+	char* record = (char *)malloc(nBytesOutsideRecord);
+	ULL count = 0;
 	for (int i = 0; i < nPointsToTest; ++i) {
 		record[i] = 0;
 	}
+	
+	debug("Allocating memory done");
 
 	// pointers for gpu arrays
-	int* gpuRecord;
-	int* gpuCount;
+	char* gpuRecord;
+	ULL* gpuCount;
 
 	// allocate memory on device (gpu)
 	cudaMalloc(&gpuRecord, nBytesOutsideRecord);
@@ -137,12 +141,20 @@ int main(int argc, char** argv) {
 	cudaMemcpy(gpuRecord, record, nBytesOutsideRecord, cudaMemcpyHostToDevice);
 	cudaMemcpy(gpuCount, &count, nBytesCount, cudaMemcpyHostToDevice);
 
-	// determine threads and block size
-	int nThreads = 256;
-	int nBlocks = (nPointsToTest + nThreads - 1) / nThreads;
+	int nThreads = 1024;
+	int nBlocksNeeded = (nPointsToTest + nThreads - 1) / nThreads;
+	int nBlocks = nBlocksNeeded;
+	int nBlocks1 = 1;
+	int nBlocks2 = 1;
+	if (nBlocks > 65535) {
+		nBlocks = 65535;
+		nBlocks1 = ceil(nBlocksNeeded/65535.0f);
+	}
+
+	debug("Block dimensions (%d, %d, %d)", nBlocks, nBlocks1, 1);
 
 	dim3 blockDimensions(nThreads, 1, 1);
-	dim3 gridDimensions(nBlocks, 1, 1);
+	dim3 gridDimensions(nBlocks, nBlocks1, nBlocks2);
 
 	// run the kernel with timing
 	cudaEventRecord(start);
@@ -166,8 +178,8 @@ int main(int argc, char** argv) {
 	free(record);
 
 	// printTestResults(dimensions[testCase], radii[testCase], count);
-	printCSVTestResults(nThreads, nBlocks, dimensions[testCase], radii[testCase], count, time);
-	print("Kernel took %fms", time);
+	printCSVTestResults(nThreads, nBlocks, nBlocks1, nBlocks2, dimensions[testCase], radii[testCase], count, time);
+	debug("Kernel took %fms", time);
 	
 	return 0;
 }
